@@ -1,0 +1,9 @@
+[Core]
+Name = MUC Utils
+Module = mucutils
+
+[Documentation]
+Description = General purpose utilities for running a channel.
+
+[Python]
+Version = 2+
