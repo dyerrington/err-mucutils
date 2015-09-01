@@ -6,12 +6,14 @@ import webserver, subprocess
 
 import subprocess, re
 
-global_store = defaultdict()  # there is a better place for this undoubtably...
+global_store = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))  # there is a better place for this undoubtably...
+trigger_store = defaultdict(dict)
 
 class mucutils(BotPlugin):
 
-    store_file = 'plugins/err-mucutils/muc.cache'
-    channel = "dyerrington@chat.livecoding.tv"
+    store_file          =   'plugins/err-mucutils/muc.cache'
+    trigger_store_file  =   'plugins/err-mucutils/triggers.cache'
+    channel             =   "dyerrington@chat.livecoding.tv"
        
     def activate(self):
 
@@ -47,12 +49,24 @@ class mucutils(BotPlugin):
 
     def restore_store(self):
 
+        print "\n\n\n\n\n\n\nrunning restore_store()"
+
         try:
             store = pd.read_pickle(self.store_file)
             for key, value in store.iloc[0].to_dict().items():
                 global_store[key]   =   value
+                print 'setting ', key, ' to: ', value
         except:
             self.save_store()
+
+        try:
+            store = pd.read_pickle(self.trigger_store_file)
+            for key, value in store.iloc[0].to_dict().items():
+                trigger_store[key]   =   value
+                print 'setting ', key, ' to: ', value
+        except:
+            self.save_store()
+
             # self.restore_store()
         # print "Restoring!!!!     ", global_store
 
@@ -60,8 +74,13 @@ class mucutils(BotPlugin):
         # print 'saving', store.head()
         print "attempting to save store: ", global_store
         store = pd.DataFrame(global_store, index=global_store.keys())
+        triggers = pd.DataFrame(trigger_store, index=trigger_store.keys())
+
         print "our store is:", store.head()
+        print "our trigger store is:", triggers.head()
         store.to_pickle(self.store_file)
+        triggers.to_pickle(self.trigger_store_file)
+
 
     # Topic is announced in channel every 30 minutes (configured in poller activate())
     def say_topic(self):
@@ -95,6 +114,28 @@ class mucutils(BotPlugin):
             return "Ok, set %s to %s" % (result[1], result[2])
 
         return "You're not setting anything yet you smartass!"
+
+    @botcmd()
+    def action_trigger(self, msg, args):
+        result = re.split("([^ ]+) (.+)", args)
+        
+        if len(result) == 4:
+
+            _, key, trigger_text, _ = result
+
+            if key in trigger_store:
+                current_triggers = list(set(trigger_store[key]))
+            else:
+                current_triggers = []
+
+            current_triggers.append(trigger_text)
+
+            trigger_store[key] = current_triggers
+            self.save_store()
+
+            return "Current triggers for %s: %s" % (key, str(current_triggers))
+        else:
+            return "Type it right if you wan't me to do something important, sucka!"
 
     @botcmd()
     def get(self, msg, args):
@@ -181,6 +222,24 @@ class mucutils(BotPlugin):
     def callback_message(self, msg):
 
         checks = ['video problem', 'stream just dropped', 'stream timed', 'stream just died', 'stream lagged', 'stream is lag', 'stream lag']
+
+        # print global_store
+        # print "\n\n\n\n\n\n\n\n\n\n trigger store:", trigger_store, "\n\n\n\n\n\n\n\n"
+
+        for key, triggers in trigger_store.items():
+
+            # print "\n\n\n\n\n\n\n\ntriggers! ", key, triggers
+
+            if any(sample in msg.body for sample in triggers) and msg.nick != 'Sir Wilford II':
+
+                # send messsage template:
+                print "trigger_store[key]: ", sample, trigger_store[key]
+                # self.send(
+                #     str(msg.frm).split('/')[0], # tbd, find correct mess.ref 
+                #     global_store[key],
+                #     message_type=msg.type
+                # )
+
 
         if any(chunk in msg.body for chunk in checks):
 
