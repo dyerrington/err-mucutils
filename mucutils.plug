@@ -1,5 +1,5 @@
 [Core]
-Name = MUC Utils
+Name = mucutils
 Module = mucutils
 
 [Documentation]

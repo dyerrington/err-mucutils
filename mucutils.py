@@ -8,13 +8,18 @@ import subprocess, re
 
 global_store = defaultdict()  # there is a better place for this undoubtably...
 
-class MUCUtils(BotPlugin):
+class mucutils(BotPlugin):
 
     store_file = 'plugins/err-mucutils/muc.cache'
+    channel = "dyerrington@chat.livecoding.tv"
        
     def activate(self):
 
          self.restore_store()
+         super(mucutils, self).activate()
+
+         self.start_poller(60 * 30, self.say_topic)
+
          # super(MUCUtils, self).activate()
          # self.start_poller(3, self.send_current_track)
          # self.stop_poller(self.send_current_track)
@@ -41,9 +46,14 @@ class MUCUtils(BotPlugin):
                               mtype='groupchat')
 
     def restore_store(self):
-        store = pd.read_pickle(self.store_file)
-        for key, value in store.iloc[0].to_dict().items():
-            global_store[key]   =   value
+
+        try:
+            store = pd.read_pickle(self.store_file)
+            for key, value in store.iloc[0].to_dict().items():
+                global_store[key]   =   value
+        except:
+            self.save_store()
+            # self.restore_store()
         # print "Restoring!!!!     ", global_store
 
     def save_store(self):
@@ -53,6 +63,14 @@ class MUCUtils(BotPlugin):
         print "our store is:", store.head()
         store.to_pickle(self.store_file)
 
+    # Topic is announced in channel every 30 minutes (configured in poller activate())
+    def say_topic(self):
+        self.send(
+            self.channel,
+            # str(msg.frm).split('/')[0], # tbd, find correct mess.ref 
+            "Current Topic: %s" % global_store['topic'],
+            message_type="groupchat"#msg.type
+        )
     @botcmd
     def save(self, msg, args):
         self.save_store()
@@ -73,6 +91,7 @@ class MUCUtils(BotPlugin):
         result = re.split("([^ ]+) (.+)", args)
         if len(result) == 4:
             global_store[result[1]] = result[2]
+            self.save_store()
             return "Ok, set %s to %s" % (result[1], result[2])
 
         return "You're not setting anything yet you smartass!"
@@ -87,6 +106,16 @@ class MUCUtils(BotPlugin):
             return "%s is: %s" % (args, global_store[args])
 
         return "Don't know anything about %s" % args
+
+    @botcmd()
+    def saymyname(self, msg, args):
+
+        cmd = '/usr/bin/say'
+
+        text = "Your name is, %s" % msg.nick
+
+        subprocess.call([cmd, text])
+        return "Shh I'm talking... @%s" % msg.nick
 
     @botcmd()
     def say(self, msg, args):
