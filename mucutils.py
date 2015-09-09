@@ -14,6 +14,7 @@ class mucutils(BotPlugin):
     store_file          =   'plugins/err-mucutils/muc.cache'
     trigger_store_file  =   'plugins/err-mucutils/triggers.cache'
     channel             =   "dyerrington@chat.livecoding.tv"
+    nickname            =   'WilfordII'
        
     def activate(self):
 
@@ -163,7 +164,7 @@ class mucutils(BotPlugin):
 
         cmd = '/usr/bin/say'
 
-        subprocess.call([cmd, args])
+        subprocess.call([cmd, '-v', 'Karen', args])
         return "Shh I'm talking... @%s" % msg.nick
 
     @botcmd(template="pretty")
@@ -222,6 +223,7 @@ class mucutils(BotPlugin):
     def callback_message(self, msg):
 
         checks = ['video problem', 'stream just dropped', 'stream timed', 'stream just died', 'stream lagged', 'stream is lag', 'stream lag']
+        # TBD:  make a trigger for "sleep"
 
         # print global_store
         # print "\n\n\n\n\n\n\n\n\n\n trigger store:", trigger_store, "\n\n\n\n\n\n\n\n"
@@ -230,16 +232,16 @@ class mucutils(BotPlugin):
 
             # print "\n\n\n\n\n\n\n\ntriggers! ", key, triggers
 
-            if any(sample in msg.body for sample in triggers) and msg.nick != 'Sir Wilford II':
+            # if any(sample in msg.body for sample in triggers) and msg.nick != 'WilfordII':
+            if any(key in msg.body for value in trigger_store.keys()) and msg.nick != self.nickname:
 
                 # send messsage template:
-                print "trigger_store[key]: ", sample, trigger_store[key]
-                # self.send(
-                #     str(msg.frm).split('/')[0], # tbd, find correct mess.ref 
-                #     global_store[key],
-                #     message_type=msg.type
-                # )
-
+                print "trigger_store[key]: ", key, trigger_store[key], msg.nick, msg.type
+                self.send(
+                    str(msg.frm).split('/')[0], # tbd, find correct mess.ref 
+                    global_store[key],
+                    message_type=msg.type
+                )
 
         if any(chunk in msg.body for chunk in checks):
 
@@ -248,6 +250,61 @@ class mucutils(BotPlugin):
 
             self.send(
                 str(msg.frm).split('/')[0], # tbd, find correct mess.ref 
-                "Yeah sorry. There's a problem with OSX and OBS software we use to stream. Most people streaming on OSX have this issues iwth their channel.  While we wait on the next version of OBS, you will have to reload.  Sorry about that!",
+                "Yeah sorry. There's a problem with OSX and OBS software we use to stream. Most people streaming on OSX have this issues iwth their channel.  While we wait on the next version of OBS, you will have to reload.  Sorry about that!\n\nSome users report having better results with watching from VLC using: https://github.com/chrippa/livestreamer (thanks for the link sulami)",
                 message_type=msg.type
             )
+
+    def callback_presence(self, presence):
+
+        # self.send(
+        #     "dyerrington@chat.livecoding.tv", # tbd, find correct mess.ref 
+        #     "There was a presence change.. everyone grab your wallets %s" % presence,
+        #     message_type="groupchat"
+        # )
+
+        # params = presence.split(' ')
+        # parsed = {}        
+
+        # for param in params:
+
+        #     key, value  =   param.split(':')
+        #     parsed[key] =   value
+
+
+
+
+        logging.warning('presence change!!!')
+        logging.warning(presence)
+        print "\n\n\n\n\n\n\n\n\n\n\n PRESENCE!", presence.__dict__
+
+        if presence.nick in ['drmjg'] and presence.status == 'online':
+            self.send(
+                "dyerrington@chat.livecoding.tv", # tbd, find correct mess.ref 
+                "The doctor has landed!",
+                message_type="groupchat"
+            )
+            subprocess.call(['say', '-v', '"Good News"', 'The doctor has landed!'])
+
+
+
+        if presence.nick in ['davinci83', 'trump', 'michgeek', 'unicorn'] and presence.status == 'online':
+            self.send(
+                "dyerrington@chat.livecoding.tv", # tbd, find correct mess.ref 
+                "The %s is in the house!" % presence.nick,
+                message_type="groupchat"
+            )
+            subprocess.call(['say', '-v', 'Trinoids', 'The %s is in the house!' % presence.nick])
+
+
+        print "\n\n\n\n\n\n\n\n\n\n\n PRESENCE!", presence
+
+    def callback_room_joined(self, room):
+
+        self.send(
+            "dyerrington@chat.livecoding.tv", # tbd, find correct mess.ref 
+            "I have returned... Muwahahahaha!",
+            message_type="groupchat"
+        )
+
+        logging.warning('OMG logged something!!!') # room == room@chat.livecoding.tv
+        logging.warning(room)
