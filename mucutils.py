@@ -1,5 +1,5 @@
 from errbot import BotPlugin, botcmd, webhook, logging
-import pandas as pd
+import pandas as pd, arrow
 from collections import defaultdict
 from errbot.templating import tenv
 import webserver, subprocess
@@ -8,6 +8,7 @@ import subprocess, re
 
 global_store = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))  # there is a better place for this undoubtably...
 trigger_store = defaultdict(dict)
+stats_store = defaultdict(dict)
 
 class mucutils(BotPlugin):
 
@@ -160,12 +161,48 @@ class mucutils(BotPlugin):
         return "Shh I'm talking... @%s" % msg.nick
 
     @botcmd()
+    def dolan(self, msg, args):
+
+        cmd = '/usr/bin/say'
+
+        subprocess.call([cmd, '-v', 'Markus', args])
+        return "Eile mit Weile..Ich bin ein berliner, mein schatz... @%s" % msg.nick
+
+    @botcmd()
+    def daniel(self, msg, args):
+
+        cmd = '/usr/bin/say'
+
+        subprocess.call([cmd, '-v', 'Daniel', args])
+        return "Shh I'm talking lad... @%s" % msg.nick
+
+    @botcmd()
     def say(self, msg, args):
 
         cmd = '/usr/bin/say'
 
         subprocess.call([cmd, '-v', 'Karen', args])
         return "Shh I'm talking... @%s" % msg.nick
+
+    @botcmd()
+    def search(self, msg, args):
+
+        matches = []
+
+        for key in global_store.keys():
+            if re.match(r'|'+ key + '|', args):
+                matches.append(key)
+
+        if len(matches) == 1:
+            return "I found one: %s" % " ".join(matches)
+        elif len(matches) > 1:
+            return "I found a few: %s" % ", ".join(matches)
+        else:
+            return "Nothing found matching %s" % args
+
+        logging.warning("\n\n\n\n\n\n\n\n\n\n\n\n HEEEEEEEEY")
+        logging.warning(args)
+        return "I'm searching ok!!!!"
 
     @botcmd(template="pretty")
     def pretty(self, msg, args):
@@ -269,12 +306,11 @@ class mucutils(BotPlugin):
 
         #     key, value  =   param.split(':')
         #     parsed[key] =   value
-
-
-
-
+        #     
+        
         logging.warning('presence change!!!')
         logging.warning(presence)
+
         print "\n\n\n\n\n\n\n\n\n\n\n PRESENCE!", presence.__dict__
 
         if presence.nick in ['drmjg'] and presence.status == 'online':
@@ -287,7 +323,7 @@ class mucutils(BotPlugin):
 
 
 
-        if presence.nick in ['davinci83', 'trump', 'michgeek', 'unicorn'] and presence.status == 'online':
+        if presence.nick in ['davinci83', 'trump', 'michgeek', 'unicorn', 'devnubby', 'dardoneli', 'the1owl', 'allisonanalytics', 'hugo_r'] and presence.status == 'online':
             self.send(
                 "dyerrington@chat.livecoding.tv", # tbd, find correct mess.ref 
                 "The %s is in the house!" % presence.nick,
