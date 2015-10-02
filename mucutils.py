@@ -1,32 +1,85 @@
 from errbot import BotPlugin, botcmd, webhook, logging
-import pandas as pd, arrow
+from errbot.backends.base import Message, MUCRoom, Presence, RoomNotJoinedError
+
+import pandas as pd, arrow, sqlite3 as db
 from collections import defaultdict
 from errbot.templating import tenv
 import webserver, subprocess
 
 import subprocess, re
 
+
+# simple ORM via sqlalchemy
+# from sqlalchemy import Column, Integer, String, Sequence, Text, DateTime, MetaData, Table, create_engine
+# from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
+
+import muc_orm as orm
+
+
+
 global_store = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))  # there is a better place for this undoubtably...
 trigger_store = defaultdict(dict)
-stats_store = defaultdict(dict)
+stats_store = defaultdict(list)
+karma_store = defaultdict(list)
+
+""" 
+    Note to self - TBD:
+
+    - Vote / kick
+    - !say thresh
+    - !say off / on vote
+    - join / leave stats
+    - time based gammafication
+    - spotify: vote skip track
+    - music links: youtube
+    - !lastseen [username]
+
+"""
 
 class mucutils(BotPlugin):
 
     store_file          =   'plugins/err-mucutils/muc.cache'
     trigger_store_file  =   'plugins/err-mucutils/triggers.cache'
+    stats_store_file    =   'plugins/err-mucutils/stats.cache'
+    karma_store_file    =   'plugins/err-mucutils/karma.cache'
+    """ starting to move code over to SQLite3 """
+    dsn = {
+        'db_file': 'plugins/err-mucutils/mucutils.db',
+    }
+
     channel             =   "dyerrington@chat.livecoding.tv"
     nickname            =   'WilfordII'
        
+    graylist            =   ['fro5t2']
+
+    """ ORM config """
+    # Base                =   declarative_base()
+
     def activate(self):
 
-         self.restore_store()
-         super(mucutils, self).activate()
+        self.set_orm()
 
-         self.start_poller(60 * 30, self.say_topic)
+        self.restore_store()
+        super(mucutils, self).activate()
 
-         # super(MUCUtils, self).activate()
-         # self.start_poller(3, self.send_current_track)
-         # self.stop_poller(self.send_current_track)
+        self.start_poller(60 * 30, self.say_topic)
+
+        # super(MUCUtils, self).activate()
+        # self.start_poller(3, self.send_current_track)
+        # self.stop_poller(self.send_current_track)
+
+    def set_orm(self):
+        
+        self.engine     =   create_engine('sqlite:///plugins/err-mucutils/mucutils.db', echo=True)
+        self.session    =   sessionmaker()
+        self.session.configure(bind=self.engine)
+        orm.Base.metadata.create_all(self.engine)
+
+        self.dbh        =   self.session()
+
 
     # in progress -- thanks Allison!
     def callback_user_joined_chat(self, conn, presence):
@@ -49,6 +102,18 @@ class mucutils(BotPlugin):
                                                       presence['muc']['nick']),
                               mtype='groupchat')
 
+    def restore_store_tbd(self, store_object=False, store_file=False):
+
+        print "\n\n\n\n\n\n\nrunning restore_store()"
+
+        try:
+            store = pd.read_pickle(store_file)
+            for key, value in store.iloc[0].to_dict().items():
+                store_object[key]   =   value
+                print 'setting ', key, ' to: ', value
+        except:
+            self.save_store()
+
     def restore_store(self):
 
         print "\n\n\n\n\n\n\nrunning restore_store()"
@@ -69,23 +134,64 @@ class mucutils(BotPlugin):
         except:
             self.save_store()
 
+        try:
+            store = pd.read_pickle(self.stats_store_file)
+            for key, value in store.iloc[0].to_dict().items():
+                stats_store[key]   =   value
+                print 'setting ', key, ' to: ', value
+        except:
+            self.save_store()
+
+
+        try:
+            store = pd.read_pickle(self.karma_store_file)
+            for key, value in store.iloc[0].to_dict().items():
+                karma_store[key]   =   value
+                print 'setting ', key, ' to: ', value
+        except:
+            self.save_store()
+
             # self.restore_store()
         # print "Restoring!!!!     ", global_store
 
     def save_store(self):
         # print 'saving', store.head()
         print "attempting to save store: ", global_store
-        store = pd.DataFrame(global_store, index=global_store.keys())
-        triggers = pd.DataFrame(trigger_store, index=trigger_store.keys())
+        store       =   pd.DataFrame(global_store, index=global_store.keys())
+        triggers    =   pd.DataFrame(trigger_store, index=trigger_store.keys())
+        stats       =   pd.DataFrame(stats_store, index=stats_store.keys())
+        karma       =   pd.DataFrame(karma_store, index=karma_store.keys())
 
         print "our store is:", store.head()
         print "our trigger store is:", triggers.head()
         store.to_pickle(self.store_file)
         triggers.to_pickle(self.trigger_store_file)
+        stats.to_pickle(self.stats_store_file)
+        karma.to_pickle(self.karma_store_file)
 
+    @botcmd()
+    def crash(self, msg, args):
+        import pdb
+
+        room = self.query_room(self.channel)
+        print room.occupants()
+
+
+        # print backends.base.MUCRoom.occupants
+        # pdb.set_trace()
+        return dir(msg)
+        
+
+    @botcmd
+    def orm(self, msg, args):
+        # term = orm.Term(term='goodread', value='very high value', nickname='dyerrington')
+        logging.warning('orm.Base:')
+        logging.warning(orm.Base)
+        return "orm loaded hopefully.."
 
     # Topic is announced in channel every 30 minutes (configured in poller activate())
     def say_topic(self):
+
         self.send(
             self.channel,
             # str(msg.frm).split('/')[0], # tbd, find correct mess.ref 
@@ -99,10 +205,17 @@ class mucutils(BotPlugin):
 
     @botcmd
     def restore(self, msg, args):
+
         self.restore_store()
+
+        # self.restore_store(store_object=global_store, store_file=self.store_file)
+        # self.restore_store(store_object=trigger_store, store_file=self.trigger_store_file)
+        # self.restore_store(store_object=karma_store, store_file=self.karma_store_file)
+        # self.restore_store(store_object=stats_store, store_file=self.stats_store_file)
+
         return "Store loaded!"
 
-    @botcmd
+    @botcmd()
     def hello(self, msg, args):
         return "Hello, livecoding.tv!"
 
@@ -111,8 +224,16 @@ class mucutils(BotPlugin):
         
         result = re.split("([^ ]+) (.+)", args)
         if len(result) == 4:
-            global_store[result[1]] = result[2]
-            self.save_store()
+
+            self.set_orm()
+
+            term    =   orm.Term(term=result[1], value=result[2], nickname=msg.nick)
+            self.dbh.merge(term)
+            self.dbh.commit()
+
+            # global_store[result[1]] = result[2]
+            # self.save_store()
+            
             return "Ok, set %s to %s" % (result[1], result[2])
 
         return "You're not setting anything yet you smartass!"
@@ -142,13 +263,20 @@ class mucutils(BotPlugin):
     @botcmd()
     def get(self, msg, args):
 
-        print "global_store:", global_store
-        print "val:", global_store[args]
+        try:
+            self.set_orm()
 
-        if args in global_store:
-            return "%s is: %s" % (args, global_store[args])
+            result  =   self.dbh.query(orm.Term).filter(orm.Term.term == args.strip())
+            value   =   result.one().value
+            return "%s is: %s" % (args, value)
+        except:
+            return "Don't know anything about %s" % args
+        
 
-        return "Don't know anything about %s" % args
+    @botcmd()
+    def karma(self, msg, args):
+        karma_store[args].append({msg.nick: arrow.utcnow()})
+        return "Ok added karma to %s args" % args
 
     @botcmd()
     def saymyname(self, msg, args):
@@ -163,6 +291,9 @@ class mucutils(BotPlugin):
     @botcmd()
     def dolan(self, msg, args):
 
+        if msg.nick in self.graylist:
+            return "Sorry %s, you turned off your say :(" % msg.nick
+
         cmd = '/usr/bin/say'
 
         subprocess.call([cmd, '-v', 'Markus', args])
@@ -171,6 +302,9 @@ class mucutils(BotPlugin):
     @botcmd()
     def daniel(self, msg, args):
 
+        if msg.nick in self.graylist:
+            return "Sorry %s, you turned off your say :(" % msg.nick
+        
         cmd = '/usr/bin/say'
 
         subprocess.call([cmd, '-v', 'Daniel', args])
@@ -178,6 +312,9 @@ class mucutils(BotPlugin):
 
     @botcmd()
     def say(self, msg, args):
+
+        if msg.nick in self.graylist:
+            return "Sorry %s, you turned off your say :(" % msg.nick
 
         cmd = '/usr/bin/say'
 
@@ -189,9 +326,10 @@ class mucutils(BotPlugin):
 
         matches = []
 
-        for key in global_store.keys():
-            if re.match(r'|'+ key + '|', args):
-                matches.append(key)
+        results = self.dbh.query(orm.Term).filter(orm.Term.term.like("%" + args + "%")).all()
+
+        for row in results:
+            matches.append(row.term)
 
         if len(matches) == 1:
             return "I found one: %s" % " ".join(matches)
@@ -287,7 +425,7 @@ class mucutils(BotPlugin):
 
             self.send(
                 str(msg.frm).split('/')[0], # tbd, find correct mess.ref 
-                "Yeah sorry. There's a problem with OSX and OBS software we use to stream. Most people streaming on OSX have this issues iwth their channel.  While we wait on the next version of OBS, you will have to reload.  Sorry about that!\n\nSome users report having better results with watching from VLC using: https://github.com/chrippa/livestreamer (thanks for the link sulami)",
+                "Yeah sorry. There's a problem with OSX and OBS software we use to stream. Most people streaming on OSX have this issues iwth their channel.  While we wait on the next version of OBS, you will have to reload.  Sorry about that!\n\nSome users report having better results with watching from VLC using: https://github.com/chrippa/livestreamer (pip install livestreamer)\n\nTo connect via livestreamer, look for the 'rtmp' link (looks like this: http://snag.gy/3o2rA.jpg), and run livestreamer from the terminal.",
                 message_type=msg.type
             )
 
@@ -311,7 +449,7 @@ class mucutils(BotPlugin):
         logging.warning('presence change!!!')
         logging.warning(presence)
 
-        print "\n\n\n\n\n\n\n\n\n\n\n PRESENCE!", presence.__dict__
+        # print "\n\n\n\n\n\n\n\n\n\n\n PRESENCE!", presence.__dict__
 
         if presence.nick in ['drmjg'] and presence.status == 'online':
             self.send(
@@ -319,17 +457,32 @@ class mucutils(BotPlugin):
                 "The doctor has landed!",
                 message_type="groupchat"
             )
-            subprocess.call(['say', '-v', '"Good News"', 'The doctor has landed!'])
+            subprocess.call(['say', 'The doctor has landed!'])
 
 
+        if presence.nick in ['tbh'] and presence.status == 'online':
+            self.send(
+                "dyerrington@chat.livecoding.tv", # tbd, find correct mess.ref 
+                "%s, part machine, part legend." % presence.nick,
+                message_type="groupchat"
+            )
+            subprocess.call(['say', '-v', 'Karen', '%s, part machine, part legend.' % presence.nick])
 
-        if presence.nick in ['davinci83', 'trump', 'michgeek', 'unicorn', 'devnubby', 'dardoneli', 'the1owl', 'allisonanalytics', 'hugo_r'] and presence.status == 'online':
+
+        if presence.nick in ['davinci83', 'trump', 'michgeek', 'unicorn', 'fro5t', 'devnubby', 'dardoneli', 'the1owl', 'allisonanalytics', 'hugo_r', 'sqeezy80', 'hakim', 'rondorules', 'goodread', 'castillonis'] and presence.status == 'online':
             self.send(
                 "dyerrington@chat.livecoding.tv", # tbd, find correct mess.ref 
                 "The %s is in the house!" % presence.nick,
                 message_type="groupchat"
             )
             subprocess.call(['say', '-v', 'Trinoids', 'The %s is in the house!' % presence.nick])
+
+ 
+        stats_store[presence.nick].append({str(arrow.utcnow()): str(presence.status)})
+
+        logging.warning('stats_store is: ', stats_store)
+        print stats_store
+
 
 
         print "\n\n\n\n\n\n\n\n\n\n\n PRESENCE!", presence
