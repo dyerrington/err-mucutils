@@ -12,7 +12,7 @@ import subprocess, re
 # simple ORM via sqlalchemy
 # from sqlalchemy import Column, Integer, String, Sequence, Text, DateTime, MetaData, Table, create_engine
 # from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -52,7 +52,11 @@ class mucutils(BotPlugin):
 
     channel             =   "dyerrington@chat.livecoding.tv"
     nickname            =   'WilfordII'
-       
+    say_flag            =   "On"
+    say_vote_on         =   set()
+    say_vote_off        =   set()
+    say_vote_threashold =   3
+
     graylist            =   ['fro5t2']
 
     """ ORM config """
@@ -173,14 +177,34 @@ class mucutils(BotPlugin):
     def crash(self, msg, args):
         import pdb
 
-        room = self.query_room(self.channel)
-        print room.occupants()
+        print self.query_room(self.channel).occupants
+        # print room.occupants()
 
 
         # print backends.base.MUCRoom.occupants
         # pdb.set_trace()
-        return dir(msg)
-        
+        return  self.query_room(self.channel).occupants
+    
+    @botcmd()
+    def say_on(self, msg, args):
+        # say_vote_threashold
+        self.say_vote_on.add(msg.nick)
+        if len(self.say_vote_on) >= 3:
+            self.say = "On"
+            self.say_vote_on, self.say_vote_off = set(), set()
+  
+            return "Vote passed.  Say turned on." 
+        return "Current vote to turn say on: %d" % len(self.say_vote_on)
+
+    @botcmd()
+    def say_off(self, msg, args):
+        self.say_vote_off.add(msg.nick)
+
+        if len(self.say_vote_off) >= 3:
+            self.say = "Off"
+            self.say_vote_on, self.say_vote_off = set(), set()
+            return "Vote passed.  Say turned off." 
+        return "Current vote to turn say off: %d" % len(self.say_vote_off)
 
     @botcmd
     def orm(self, msg, args):
@@ -218,6 +242,13 @@ class mucutils(BotPlugin):
     @botcmd()
     def hello(self, msg, args):
         return "Hello, livecoding.tv!"
+
+    @botcmd()
+    def giveaway(self, msg, args):
+        self.set_orm()
+        self.dbh.merge(orm.Giveaway(nickname=msg.nick, updated=func.now()))
+        self.dbh.commit()
+        return "Ok you are entered to win %s!" % msg.nick
 
     @botcmd()
     def set(self, msg, args):
@@ -281,8 +312,10 @@ class mucutils(BotPlugin):
     @botcmd()
     def saymyname(self, msg, args):
 
-        cmd = '/usr/bin/say'
+        if self.say_flag == 'Off':
+            return 'Sorry, the channel voted the say command off.'
 
+        cmd = '/usr/bin/say'
         text = "Your name is, %s" % msg.nick
 
         subprocess.call([cmd, text])
@@ -290,6 +323,9 @@ class mucutils(BotPlugin):
 
     @botcmd()
     def dolan(self, msg, args):
+
+        if self.say_flag == 'Off':
+            return 'Sorry, the channel voted the say command off.'
 
         if msg.nick in self.graylist:
             return "Sorry %s, you turned off your say :(" % msg.nick
@@ -302,6 +338,9 @@ class mucutils(BotPlugin):
     @botcmd()
     def daniel(self, msg, args):
 
+        if self.say_flag == 'Off':
+            return 'Sorry, the channel voted the say command off.'
+
         if msg.nick in self.graylist:
             return "Sorry %s, you turned off your say :(" % msg.nick
         
@@ -312,6 +351,9 @@ class mucutils(BotPlugin):
 
     @botcmd()
     def say(self, msg, args):
+
+        if self.say_flag == 'Off':
+            return 'Sorry, the channel voted the say command off.'
 
         if msg.nick in self.graylist:
             return "Sorry %s, you turned off your say :(" % msg.nick
@@ -450,6 +492,16 @@ class mucutils(BotPlugin):
         logging.warning(presence)
 
         # print "\n\n\n\n\n\n\n\n\n\n\n PRESENCE!", presence.__dict__
+
+        if presence.nick in ['xmetrix'] and presence.status == 'online':
+           
+            message     =   'xmetrix: kept looking for the chapter "Lisps"'
+            self.send(
+                "dyerrington@chat.livecoding.tv", # tbd, find correct mess.ref 
+                message,
+                message_type="groupchat"
+            )
+            subprocess.call(['say', '-v', 'Thomas', message])
 
         if presence.nick in ['drmjg'] and presence.status == 'online':
             self.send(
