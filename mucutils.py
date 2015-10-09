@@ -5,6 +5,8 @@ import pandas as pd, arrow, sqlite3 as db
 from collections import defaultdict
 from errbot.templating import tenv
 import webserver, subprocess
+import random, gntp.notifier
+
 
 import subprocess, re
 
@@ -177,20 +179,21 @@ class mucutils(BotPlugin):
     def crash(self, msg, args):
         import pdb
 
-        print self.query_room(self.channel).occupants
+        for item in self.query_room(self.channel).occupants:
+            print item
         # print room.occupants()
 
 
         # print backends.base.MUCRoom.occupants
         # pdb.set_trace()
-        return  self.query_room(self.channel).occupants
+        return [user.split('/')[1] for user in self.query_room(self.channel).occupants]
     
     @botcmd()
     def say_on(self, msg, args):
         # say_vote_threashold
         self.say_vote_on.add(msg.nick)
         if len(self.say_vote_on) >= 3:
-            self.say = "On"
+            self.say_flag = "On"
             self.say_vote_on, self.say_vote_off = set(), set()
   
             return "Vote passed.  Say turned on." 
@@ -201,7 +204,7 @@ class mucutils(BotPlugin):
         self.say_vote_off.add(msg.nick)
 
         if len(self.say_vote_off) >= 3:
-            self.say = "Off"
+            self.say_flag = "Off"
             self.say_vote_on, self.say_vote_off = set(), set()
             return "Vote passed.  Say turned off." 
         return "Current vote to turn say off: %d" % len(self.say_vote_off)
@@ -244,11 +247,62 @@ class mucutils(BotPlugin):
         return "Hello, livecoding.tv!"
 
     @botcmd()
+    def update_users(self, msg, args):
+        self.set_orm()
+        self.dbh.merge(orm.User(nickname=msg.nick, updated=func.now()))
+        self.dbh.commit()
+        return "Ok updated the users table" 
+
+    @botcmd()
     def giveaway(self, msg, args):
+
+        return "Sorry our giveaway is closed until next time!"
+
         self.set_orm()
         self.dbh.merge(orm.Giveaway(nickname=msg.nick, updated=func.now()))
         self.dbh.commit()
         return "Ok you are entered to win %s!" % msg.nick
+
+    @botcmd()
+    def giveaway_winner(self, msg, args):
+
+        if msg.nick != 'dyerrington':
+            return "What do you think this is?  You can't pick a winner!"
+
+        # random.choice(#)
+        
+        users = [] 
+
+        for user in self.dbh.query(orm.Giveaway).all():
+            users.append(user.nickname) 
+        
+        cmd         =   "/usr/bin/afplay"
+        sound_file  =   "/Users/davidyerrington/soundclips/magnificent.wav"
+
+        winner      =   random.choice(users)
+
+        growl = gntp.notifier.GrowlNotifier(
+                applicationName = "livecoding.tv Awesome Notification Business HD",
+                notifications = ["New Updates","New Messages"],
+                defaultNotifications = ["New Messages"]
+                # hostname = "computer.example.com", # Defaults to localhost
+                # password = "abc123" # Defaults to a blank password
+        )
+
+        growl.register()
+        growl.notify(
+            noteType = "New Messages",
+            title = "%s" % winner,
+            description = "You're our giveaway winner! Congrats!",
+            icon = "http://vignette1.wikia.nocookie.net/goldencartoons/images/6/61/Fluttershy-my-little-pony-friendship-is-magic.png",
+            sticky = True,
+            priority = 1
+        )
+
+        subprocess.call([cmd, sound_file])
+
+        return "And the winner is %s" % winner
+
 
     @botcmd()
     def set(self, msg, args):
@@ -442,6 +496,8 @@ class mucutils(BotPlugin):
         checks = ['video problem', 'stream just dropped', 'stream timed', 'stream just died', 'stream lagged', 'stream is lag', 'stream lag']
         # TBD:  make a trigger for "sleep"
 
+        # another test:  Is this nudejs?
+
         # print global_store
         # print "\n\n\n\n\n\n\n\n\n\n trigger store:", trigger_store, "\n\n\n\n\n\n\n\n"
 
@@ -488,8 +544,8 @@ class mucutils(BotPlugin):
         #     parsed[key] =   value
         #     
         
-        logging.warning('presence change!!!')
-        logging.warning(presence)
+        logging.warning('presence change!!!') 
+        logging.warning(presence) 
 
         # print "\n\n\n\n\n\n\n\n\n\n\n PRESENCE!", presence.__dict__
 
@@ -521,7 +577,7 @@ class mucutils(BotPlugin):
             subprocess.call(['say', '-v', 'Karen', '%s, part machine, part legend.' % presence.nick])
 
 
-        if presence.nick in ['davinci83', 'trump', 'michgeek', 'unicorn', 'fro5t', 'devnubby', 'dardoneli', 'the1owl', 'allisonanalytics', 'hugo_r', 'sqeezy80', 'hakim', 'rondorules', 'goodread', 'castillonis'] and presence.status == 'online':
+        if presence.nick in ['davinci83', 'trump', 'michgeek', 'unicorn', 'fro5t', 'devnubby', 'dardoneli', 'the1owl', 'allisonanalytics', 'hugo_r', 'sqeezy80', 'hakim', 'rondorules', 'goodread', 'castillonis', 'zuma89'] and presence.status == 'online':
             self.send(
                 "dyerrington@chat.livecoding.tv", # tbd, find correct mess.ref 
                 "The %s is in the house!" % presence.nick,

@@ -39,7 +39,7 @@ class User(Base):
     # id          =   Column(Integer, Sequence('user_id_seq'), )
     nickname    =   Column(String(50), nullable=False, primary_key=True)
     created     =   Column(DateTime(), default=func.now())
-    updated     =   Column(DateTime(), onupdate=func.now())
+    updated     =   Column(DateTime(), onupdate=func.now()) 
 
     def __repr__(self):
         return "<User(nickname='%s')>" % (self.nickname)
