@@ -21,6 +21,20 @@ class Term(Base):
     def __repr__(self):
         return "<Term(nickname='%r', term='%r', value='%r', created='%r', upated='%r')>" % (self.nickname, self.term, self.value, self.created, self.updated)
 
+class Url(Base):
+
+    __tablename__ = 'urls'
+
+    url         =   Column(String(255), primary_key=True)
+    nickname    =   Column(String(100), nullable=False)
+
+    created     =   Column(DateTime(), default=func.now())
+    updated     =   Column(DateTime(), onupdate=func.now())
+
+    def __repr__(self):
+        return "<Giveaway(nickname='%r', url='%r', created='%r', updated='%r')>" % (self.nickname, self.url, self.created, self.updated)
+
+
 class Giveaway(Base):
 
     __tablename__ = 'giveaway'
@@ -43,6 +57,39 @@ class User(Base):
 
     def __repr__(self):
         return "<User(nickname='%s')>" % (self.nickname)
+
+
+class Message(Base):
+
+    __tablename__ = 'messages'
+
+    id          =   Column(Integer(), Sequence('message_id_seq'), primary_key=True)
+
+    nickname    =   Column(String(50), nullable=False)
+    message     =   Column(Text(), nullable=False)
+    message_type=   Column(String(50), nullable=False)
+
+    created     =   Column(DateTime(), default=func.now())
+    updated     =   Column(DateTime(), onupdate=func.now()) 
+
+    def __repr__(self):
+        return "<Message(id=%r, nickname='%r', message='%r', message_type='%r', created='%r', updated='%r')>" % (self.id, self.nickname, self.message, self.message_type, self.created, self.updated)
+
+class Sounds(Base):
+
+    __tablename__ = 'sound_clips'
+
+    id          =   Column(Integer(), Sequence('sound_id_seq'), primary_key=True)
+
+    filename    =   Column(String(50), nullable=False)
+    title       =   Column(String(50), nullable=False)
+    description =   Column(Text(), nullable=False)
+
+    created     =   Column(DateTime(), default=func.now())
+    updated     =   Column(DateTime(), onupdate=func.now()) 
+
+    def __repr__(self):
+        return "<Message(id=%r, filename='%r', title='%r', description='%r', created='%r', updated='%r')>" % (self.id, self.filename, self.title, self.description, self.created, self.updated)
 
 
 engine  =   create_engine('sqlite:///mucutils.db', echo=True)

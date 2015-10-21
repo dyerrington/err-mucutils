@@ -1,11 +1,15 @@
 from errbot import BotPlugin, botcmd, webhook, logging
 from errbot.backends.base import Message, MUCRoom, Presence, RoomNotJoinedError
 
+from datetime import *; from dateutil.relativedelta import *
+import humanize, Levenshtein
+
 import pandas as pd, arrow, sqlite3 as db
 from collections import defaultdict
 from errbot.templating import tenv
 import webserver, subprocess
 import random, gntp.notifier
+import time, operator
 
 
 import subprocess, re
@@ -14,13 +18,15 @@ import subprocess, re
 # simple ORM via sqlalchemy
 # from sqlalchemy import Column, Integer, String, Sequence, Text, DateTime, MetaData, Table, create_engine
 # from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import create_engine, func
+from sqlalchemy import create_engine, func, desc
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 
 import muc_orm as orm
 
-
+# super cool human times!
+attrs = ['years', 'months', 'days', 'hours', 'minutes', 'seconds']
+human_readable = lambda delta: ['%d %s' % (getattr(delta, attr), getattr(delta, attr) > 1 and attr or attr[:-1]) for attr in attrs if getattr(delta, attr)]
 
 global_store = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))  # there is a better place for this undoubtably...
 trigger_store = defaultdict(dict)
@@ -54,10 +60,22 @@ class mucutils(BotPlugin):
 
     channel             =   "dyerrington@chat.livecoding.tv"
     nickname            =   'WilfordII'
+
     say_flag            =   "On"
     say_vote_on         =   set()
     say_vote_off        =   set()
     say_vote_threashold =   3
+
+    sound_quiz_store    =   { 
+        'state': 0,     # 0 = off, 1 = init, 2 = question, 3 = answer
+        'sound_file': False,
+        'answer_ordinal': 0,
+        'current_answers': {}
+    }
+
+    sound_quiz_flag     =   "Off"
+    sound_quiz_vote_on  =   set()
+
 
     graylist            =   ['fro5t2']
 
@@ -72,6 +90,7 @@ class mucutils(BotPlugin):
         super(mucutils, self).activate()
 
         self.start_poller(60 * 30, self.say_topic)
+        self.start_poller(60 * 5, self.update_user_presence)
 
         # super(MUCUtils, self).activate()
         # self.start_poller(3, self.send_current_track)
@@ -119,6 +138,7 @@ class mucutils(BotPlugin):
                 print 'setting ', key, ' to: ', value
         except:
             self.save_store()
+
 
     def restore_store(self):
 
@@ -175,19 +195,116 @@ class mucutils(BotPlugin):
         stats.to_pickle(self.stats_store_file)
         karma.to_pickle(self.karma_store_file)
 
-    @botcmd()
-    def crash(self, msg, args):
-        import pdb
+    def update_user_presence(self):
+
+        users = []
 
         for item in self.query_room(self.channel).occupants:
-            print item
-        # print room.occupants()
+
+            self.set_orm()
+            self.dbh.merge(orm.User(nickname=item.resource, updated=func.now()))
+            self.dbh.commit()
+            # update(users).where(users.c.id==5).\
+            # values(name='user #5')
+
+            users.append(item.resource)
+
+    @botcmd()
+    def seen(self, msg, args):
+        """
+        Find out if we've seen someone on the channel.  See also: !firstseen
+        """
+        try:
+
+            NOW = datetime.now()
+
+            result  =   self.dbh.query(orm.User).filter(orm.User.nickname == args.strip())
+            user    =   result.one()
+            time_units  =   human_readable(relativedelta(NOW, user.updated))
+            time_str    =   " ".join(time_units)
+            
+            return "%s was last seen %s ago." % (args.strip(), time_str)
+
+            # for user in users:
+            #     time_units  =   human_readable(relativedelta(user.updated, user.created))
+            #     time_str    =   " ".join(time_units)
+            #     stats.append("%s %s" % (user.nickname, time_str))
+
+            # return "Ok the stats: %s" % ", ".join(stats)
+
+        except:
+            return "Sorry, %s was not found." % args
 
 
-        # print backends.base.MUCRoom.occupants
-        # pdb.set_trace()
-        return [user.split('/')[1] for user in self.query_room(self.channel).occupants]
+    @botcmd()
+    def firstseen(self, msg, args):
+        """
+        Find out when we first saw someone on the channel.
+        """
+        self.set_orm()
+        # users = self.dbh.query(orm.User(nickname=args)).order_by(desc(orm.User.created)).all()
+
+
+
+        try:
+            result  =   self.dbh.query(orm.User).filter(orm.User.nickname == args.strip())
+            user    =   result.one()
+            time_units  =   human_readable(relativedelta(user.updated, user.created))
+            time_str    =   " ".join(time_units)
+            
+            return "%s was first seen %s ago." % (args.strip(), time_str)
+
+            # for user in users:
+            #     time_units  =   human_readable(relativedelta(user.updated, user.created))
+            #     time_str    =   " ".join(time_units)
+            #     stats.append("%s %s" % (user.nickname, time_str))
+
+            # return "Ok the stats: %s" % ", ".join(stats)
+
+        except:
+            return "Sorry, %s was not found." % args
+
+
+    @botcmd()
+    def crash(self, msg, args):
+
+        print self.sound_quiz_store
+
+        # import pdb
+
+        # users = []
+
+        # for item in self.query_room(self.channel).occupants:
+
+        #     self.set_orm()
+        #     self.dbh.merge(orm.User(nickname=item.resource, updated=func.now()))
+        #     self.dbh.commit()
+        #     # update(users).where(users.c.id==5).\
+        #     # values(name='user #5')
+
+        #     users.append(item.resource)
+        #     print item._resource
+        # # print room.occupants()
+        # print users
+
+        # # print backends.base.MUCRoom.occupants
+        # # pdb.set_trace()
+        # # [user.split('/')[1] for user in self.query_room(self.channel).occupants]
+        # return ", ".join(users) 
     
+    @botcmd()
+    def last_links(self, msg, arg):
+        
+        urls = self.dbh.query(orm.Url).order_by(desc(orm.Url.updated)).limit(10).all()
+        links = []
+
+        for url in urls:
+            links.append(url.url + ', ' + url.nickname)
+
+        return "Last 10 URLs:\n%s" % "\n".join(links) 
+
+
+
     @botcmd()
     def say_on(self, msg, args):
         # say_vote_threashold
@@ -357,11 +474,141 @@ class mucutils(BotPlugin):
         except:
             return "Don't know anything about %s" % args
         
-
     @botcmd()
     def karma(self, msg, args):
         karma_store[args].append({msg.nick: arrow.utcnow()})
         return "Ok added karma to %s args" % args
+
+    def init_soundquiz(self):
+
+        self.sound_quiz_store['state'] = 1
+
+        self.set_orm()
+        soundclip = self.dbh.query(orm.Sounds).filter(orm.Sounds.title != None).order_by(func.random()).first()
+        
+        self.sound_quiz_store['sound_file'] =   soundclip
+        
+
+        self.send(
+            "dyerrington@chat.livecoding.tv", # tbd, find correct mess.ref 
+            "Are you ready for the sound challege boys and girls!?",
+            message_type="groupchat"
+        )
+
+        self.send(
+            "dyerrington@chat.livecoding.tv", # tbd, find correct mess.ref 
+            "The challenege will start in 20 seconds.. buckle your safety belts.",
+            message_type="groupchat"
+        )
+
+        subprocess.call(['/usr/bin/afplay', "/Users/davidyerrington/soundbites/wheel_theme.wav"])
+
+        cmd = '/usr/bin/say'
+        subprocess.call([cmd, '-v', 'Markus', 'Get ready.'])
+        self.sound_quiz_store['state']      =   2
+
+        self.send(
+            "dyerrington@chat.livecoding.tv", # tbd, find correct mess.ref 
+            "Ok listen, then use !sound [your answer here].  Closest answer will win!",
+            message_type="groupchat"
+        )
+
+        self.sound_quiz_flag            =   'On'
+        self.sound_quiz_store['state']  =   2
+
+        random_file     =   soundclip.filename
+        subprocess.call(['/usr/bin/afplay', "/Users/davidyerrington/soundclips/%s" % random_file])
+
+        self.send(
+            "dyerrington@chat.livecoding.tv", # tbd, find correct mess.ref 
+            "Playback complete. 10 seconds remaining...",
+            message_type="groupchat"
+        )
+
+        time.sleep(10)
+
+        answers = []
+
+        for user, data in self.sound_quiz_store['current_answers'].items():
+
+            print data
+
+            distance = Levenshtein.ratio(soundclip.title.lower(), data['answer'].lower())
+            distance *= 100
+            answers.append((data['ordinal'], distance, data['answer'], user))
+
+        best_score = sorted(answers, key=lambda row: (row[1], -row[0]), reverse=True)
+        best_score = best_score[0]
+
+        if best_score[1] < 80:
+            subprocess.call(['/usr/bin/afplay', "/Users/davidyerrington/soundbites/fail.mp3"])
+
+            self.send(
+                "dyerrington@chat.livecoding.tv", # tbd, find correct mess.ref 
+                "The best answer is from: %s, only %f accuracy, with %s" % (best_score[3], best_score[1], best_score[2]),
+                message_type="groupchat"
+            )
+
+        elif best_score[1] >= 90:
+
+            self.send(
+                "dyerrington@chat.livecoding.tv", # tbd, find correct mess.ref 
+                "THE WINNER IS: %s with accuracy: %d" % (best_score[3], best_score[1]),
+                message_type="groupchat"
+            )
+            
+            subprocess.call(['/usr/bin/afplay', "/Users/davidyerrington/soundbites/yeah.mp3"])
+
+
+        self.send(
+            "dyerrington@chat.livecoding.tv", # tbd, find correct mess.ref 
+            "The sound bite was: %s\n\n%s" % (soundclip.title, soundclip.description),
+            message_type="groupchat"
+        )
+
+
+        # self.send(
+        #     "dyerrington@chat.livecoding.tv", # tbd, find correct mess.ref 
+        #     "debug best_score: %s" % best_score,
+        #     message_type="groupchat"
+        # )
+
+        # reset states for quiz
+        self.sound_quiz_flag            =   'Off'
+        self.sound_quiz_store['state']  =   0
+        self.sound_quiz_store['current_answers'] = {}
+        self.sound_quiz_vote_on     =   set()
+
+        
+    @botcmd()
+    def sound(self, msg, args):
+
+        # 0 = off, 1 = init, 2 = question, 3 = answer
+        if self.sound_quiz_flag == 'Off' and self.sound_quiz_store['state'] == 0:
+            return "We're not playing soundquiz right now.  Vote to turn it on: !soundquiz"
+
+        if self.sound_quiz_store['state'] == 1:
+            return "%s wait for the sound to play.." % msg.nick
+
+        self.sound_quiz_store['current_answers'].update({msg.nick: { 'answer': args, 'ordinal': self.sound_quiz_store['answer_ordinal']}})
+        self.sound_quiz_store['answer_ordinal'] += 1
+
+        print self.sound_quiz_store
+        return "%s thinks it's %s" % (msg.nick, args)
+
+    @botcmd()
+    def soundquiz(self, msg, args):
+
+        if self.sound_quiz_flag == 'Off':
+            self.sound_quiz_vote_on.add(msg.nick)
+
+            if len(self.sound_quiz_vote_on) == 2:
+                self.sound_quiz_flag        =   'On'
+                self.sound_quiz_vote_on     =   set()
+                self.init_soundquiz()
+
+            return "%d more votes needed to play sound quiz!  Current vote set:  %s" % (2 - (len(self.sound_quiz_vote_on)), self.sound_quiz_vote_on)
+
 
     @botcmd()
     def saymyname(self, msg, args):
@@ -374,6 +621,8 @@ class mucutils(BotPlugin):
 
         subprocess.call([cmd, text])
         return "Shh I'm talking... @%s" % msg.nick
+
+
 
     @botcmd()
     def dolan(self, msg, args):
@@ -421,6 +670,7 @@ class mucutils(BotPlugin):
     def search(self, msg, args):
 
         matches = []
+        self.set_orm()
 
         results = self.dbh.query(orm.Term).filter(orm.Term.term.like("%" + args + "%")).all()
 
@@ -452,6 +702,18 @@ class mucutils(BotPlugin):
         self.save_store()
         return "Now playing: %s" % global_store['current_track']
 
+
+    def save_url(self, matches, nickname):
+
+        for match in matches:
+            self.set_orm()
+            self.dbh.merge(orm.Url(url="%s://%s%s" % match, nickname=nickname, updated=func.now()))
+            self.dbh.commit()
+
+    def insert_message(self, nickname, message, message_type):
+        self.set_orm()
+        self.dbh.merge(orm.Message(nickname=nickname, message=message, message_type=message_type, updated=func.now()))
+        self.dbh.commit()
 
     """ Callback - More TBD 
   
@@ -493,6 +755,11 @@ class mucutils(BotPlugin):
     """
     def callback_message(self, msg):
 
+        # log every message, for posterity 
+        
+        if msg.nick != self.nickname:
+            self.insert_message(msg.nick, msg.body, msg.type)
+
         checks = ['video problem', 'stream just dropped', 'stream timed', 'stream just died', 'stream lagged', 'stream is lag', 'stream lag']
         # TBD:  make a trigger for "sleep"
 
@@ -500,6 +767,13 @@ class mucutils(BotPlugin):
 
         # print global_store
         # print "\n\n\n\n\n\n\n\n\n\n trigger store:", trigger_store, "\n\n\n\n\n\n\n\n"
+
+        p = re.compile("/((?:(http|https|Http|Https|rtsp|Rtsp):\/\/(?:(?:[a-zA-Z0-9\$\-\_\.\+\!\*\'\(\)\,\;\?\&\=]|(?:\%[a-fA-F0-9]{2})){1,64}(?:\:(?:[a-zA-Z0-9\$\-\_\.\+\!\*\'\(\)\,\;\?\&\=]|(?:\%[a-fA-F0-9]{2})){1,25})?\@)?)?((?:(?:[a-zA-Z0-9][a-zA-Z0-9\-]{0,64}\.)+(?:(?:aero|arpa|asia|a[cdefgilmnoqrstuwxz])|(?:biz|b[abdefghijmnorstvwyz])|(?:cat|com|coop|c[acdfghiklmnoruvxyz])|d[ejkmoz]|(?:edu|e[cegrstu])|f[ijkmor]|(?:gov|g[abdefghilmnpqrstuwy])|h[kmnrtu]|(?:info|int|i[delmnoqrst])|(?:jobs|j[emop])|k[eghimnrwyz]|(?:lyip|l[abcikorstuvy])|(?:mil|mobi|museum|m[acdeghklmnopqrstuvwxyz])|(?:name|net|n[acefgilopruz])|(?:org|om)|(?:pro|p[aefghklmnrstwy])|qa|r[eouw]|s[abcdeghijklmnortuvyz]|(?:tel|travel|trade|t[cdfghjklmnoprtvwz])|u[agkmsyz]|v[aceginu]|w[fs]|(?:yoky|y[etu])|z[amw]))|(?:(?:25[0-5]|2[0-4][0-9]|[0-1][0-9]{2}|[1-9][0-9]|[1-9])\.(?:25[0-5]|2[0-4][0-9]|[0-1][0-9]{2}|[1-9][0-9]|[1-9]|0)\.(?:25[0-5]|2[0-4][0-9]|[0-1][0-9]{2}|[1-9][0-9]|[1-9]|0)\.(?:25[0-5]|2[0-4][0-9]|[0-1][0-9]{2}|[1-9][0-9]|[0-9])))(?:\:\d{1,5})?)(\/(?:(?:[a-zA-Z0-9\;\/\?\:\@\&\=\#\~\-\.\+\!\*\'\(\)\,\_])|(?:\%[a-fA-F0-9]{2}))*)?(?:\b|$)/gi")
+        matches = p.findall(msg.body)
+
+        if matches and msg.nick != 'WilfordII':
+            print "Saving URL from %s" % msg.nick
+            self.save_url(matches, msg.nick)
 
         for key, triggers in trigger_store.items():
 
@@ -567,6 +841,15 @@ class mucutils(BotPlugin):
             )
             subprocess.call(['say', 'The doctor has landed!'])
 
+        if presence.nick in ['hugo_r'] and presence.status == 'online':
+            self.send(
+                "dyerrington@chat.livecoding.tv", # tbd, find correct mess.ref 
+                "Hugo Always Win!",
+                message_type="groupchat"
+            )
+            subprocess.call(['say', 'Hugo Always Win!'])
+
+
 
         if presence.nick in ['tbh'] and presence.status == 'online':
             self.send(
@@ -577,7 +860,7 @@ class mucutils(BotPlugin):
             subprocess.call(['say', '-v', 'Karen', '%s, part machine, part legend.' % presence.nick])
 
 
-        if presence.nick in ['davinci83', 'trump', 'michgeek', 'unicorn', 'fro5t', 'devnubby', 'dardoneli', 'the1owl', 'allisonanalytics', 'hugo_r', 'sqeezy80', 'hakim', 'rondorules', 'goodread', 'castillonis', 'zuma89'] and presence.status == 'online':
+        if presence.nick in ['davinci83', 'trump', 'michgeek', 'unicorn', 'fro5t', 'devnubby', 'dardoneli', 'the1owl', 'allisonanalytics', 'sqeezy80', 'hakim', 'rondorules', 'goodread', 'castillonis', 'zuma89', 'modzer0', 'pos', 'brandonbahret'] and presence.status == 'online':
             self.send(
                 "dyerrington@chat.livecoding.tv", # tbd, find correct mess.ref 
                 "The %s is in the house!" % presence.nick,
